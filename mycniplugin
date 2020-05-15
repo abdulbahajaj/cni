@@ -1,0 +1,47 @@
+#!/usr/bin/env bash
+
+OUTPUT_DIR_PATH=/home/ubuntu/my-outputs
+LOG_FILE=$OUTPUT_DIR_PATH/$(date +"%M-%H-%j-%Y")-logs.txt
+logme() {
+    echo $@ >> $LOG_FILE
+}
+
+add() {
+    logme "adding"
+}
+delete() {
+    logme "deleting"
+}
+version() {
+    echo '{
+        "cniVersion": "0.4.0",
+        "supportedVersions": ["0.4.0"]
+    }'
+}
+
+logme "---------------------------"
+logme "-env vars"
+logme $CNI_COMMAND
+logme $CNI_CONTAINERID
+logme $CNI_NETNS
+logme $CNI_IFNAME
+
+logme "-stdin"
+stdinput=`cat`
+logme $stdinput
+
+case $CNI_COMMAND in
+    ADD)
+        add
+    ;;
+    DEL)
+        delete
+    ;;
+    VERSION)
+        version
+    ;;
+    *)
+        echo "Unknown command $CNI_COMMAND"
+        exit 1
+        ;;
+esac
