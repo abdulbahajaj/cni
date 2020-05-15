@@ -1,0 +1,8 @@
+{
+  "name": "mybridgen",
+  "plugins": [
+    {
+      "type": "mycniplugin"
+    }
+  ]
+}
