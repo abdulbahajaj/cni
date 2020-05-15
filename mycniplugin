@@ -1,11 +1,15 @@
 #!/usr/bin/env bash
 
-OUTPUT_DIR_PATH=/home/ubuntu/my-outputs
+OUTPUT_DIR_PATH=/root/logs/
+mkdir -p $OUTPUT_DIR_PATH
 LOG_FILE=$OUTPUT_DIR_PATH/$(date +"%M-%H-%j-%Y")-logs.txt
+
+# OUTPUT_DIR_PATH=/home/ubuntu/my-outputs
+# LOG_FILE=$OUTPUT_DIR_PATH/$(date +"%M-%H-%j-%Y")-logs.txt
+
 logme() {
     echo $@ >> $LOG_FILE
 }
-
 add() {
     logme "adding"
 }
