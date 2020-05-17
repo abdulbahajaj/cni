@@ -10,13 +10,68 @@ LOG_FILE=$OUTPUT_DIR_PATH/$(date +"%M-%H-%j-%Y")-logs.txt
 logme() {
     echo $@ >> $LOG_FILE
 }
-add() {
-    logme "adding"
+
+cni_add() {
+    logme "Executing cni_add"
+
+    local CONFIG=${1}
+    local CNI_CONTAINERID=${2}
+    local CNI_NETNS=${3}
+    local IG_NAME=${4}
+
+    local EG_NAME="veth"$(uuid|cut -b 1-5) # EG==external gateway
+    local BRIDGE_NAME=$(echo ${CONFIG} | jq '.name')
+    local NODE_CIDR=$(echo ${CONFIG} | jq '.nodeCidr')
+
+    # Uing a counter folder to give pods unique ips.
+    # Yes I am aware of all the problems that this will cause.
+    local COUNTER=1
+    if [ -f "/tmp/counter" ]; then
+       COUNTER=$(cat /tmp/counter)
+       echo $(($COUNTER + 1)) > /tmp/counter
+    else
+        echo $COUNTER > /tmp/counter
+    fi
+    local EG_IPA=$(echo $NODE_CIDR | sed -E "s/[0-9]{1,3}\/[0-9]{1,2}/$COUNTER/g") #IPA==IP Address
+
+    local DEFAULT_GW=$(echo $NODE_CIDR | sed -E "s/[0-9]{1,3}\/[0-9]{1,2}/1\/24/g") #IPA==IP Address
+
+    logme "Adding container to network"
+
+   
+
+    logme "Reporting status to kubernetes"
+    local output='{
+        "cniVersion": "0.4.0",
+        "ips": [
+            {
+                "version": "4",
+                "address": '$EG_IPA',
+                "gateway": '$DEFAULT_GW',
+                "interface": 0
+            }
+        ],
+        "interfaces": [
+            {
+                "name": "'$IG_NAME'",
+                "mac": "dc:a6:32:6d:45:b8",
+                "sandbox": "'$CNI_NETNS'"
+            }
+        ]
+    }'
+
+    logme "ADDING S3"
+    logme $output
+    echo $output
 }
-delete() {
+cni_delete() {
+    local CONFIG=${1}
+    local CNI_CONTAINERID=${2}
+    local CNI_NETNS=${3}
+    local CNI_IFNAME=${4}
     logme "deleting"
 }
-version() {
+cni_version() {
     echo '{
         "cniVersion": "0.4.0",
         "supportedVersions": ["0.4.0"]
@@ -31,19 +86,19 @@ logme $CNI_NETNS
 logme $CNI_IFNAME
 
 logme "-stdin"
-stdinput=`cat`
-logme $stdinput
+CONFIG=`cat`
+logme $CONFIG
 
 case $CNI_COMMAND in
     ADD)
-        add
-    ;;
+        cni_add $CONFIG $CNI_CONTAINERID $CNI_NETNS $CNI_IFNAME
+        ;;
     DEL)
-        delete
-    ;;
+        cni_delete $CONFIG $CNI_CONTAINERID $CNI_NETNS $CNI_IFNAME
+        ;;
     VERSION)
-        version
-    ;;
+        cni_version
+        ;;
     *)
         echo "Unknown command $CNI_COMMAND"
         exit 1
