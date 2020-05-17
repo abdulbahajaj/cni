@@ -2,7 +2,8 @@
   "name": "mybridgen",
   "plugins": [
     {
-      "type": "mycniplugin"
+      "type": "mycniplugin",
+      "nodeCidr": "10.111.0.0/24"
     }
   ]
 }
