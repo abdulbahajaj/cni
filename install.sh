@@ -9,9 +9,6 @@ BRIDGE_NAME=$(echo $CONF_FILE_CONTENT | jq -r '.name')
 
 BRIDGE_IP_ADDRESS=$(echo $CONF_FILE_CONTENT | jq -r '.plugins[0].nodeCidr' | sed -E "s/[0-9]{1,3}\/[0-9]{1,2}/1\/24/g")
 
-echo $BRIDGE_IP_ADDRESS
-
-
 echo "Creating bridge"
 ip link add $BRIDGE_NAME type bridge
 ip link set $BRIDGE_NAME up
