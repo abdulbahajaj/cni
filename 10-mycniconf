@@ -3,7 +3,7 @@
   "plugins": [
     {
       "type": "mycniplugin",
-      "nodeCidr": "10.111.0.0/24"
+      "nodeCidr": "10.111.1.0/24"
     }
   ]
 }
