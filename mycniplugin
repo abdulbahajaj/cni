@@ -4,9 +4,6 @@ OUTPUT_DIR_PATH=/root/logs/
 mkdir -p $OUTPUT_DIR_PATH
 LOG_FILE=$OUTPUT_DIR_PATH/$(date +"%M-%H-%j-%Y")-logs.txt
 
-# OUTPUT_DIR_PATH=/home/ubuntu/my-outputs
-# LOG_FILE=$OUTPUT_DIR_PATH/$(date +"%M-%H-%j-%Y")-logs.txt
-
 logme() {
     echo $@ >> $LOG_FILE
 }
@@ -14,69 +11,95 @@ logme() {
 cni_add() {
     logme "Executing cni_add"
 
+
     local CONFIG=${1}
     local CNI_CONTAINERID=${2}
     local CNI_NETNS=${3}
     local IG_NAME=${4}
 
-    local EG_NAME="veth"$(uuid|cut -b 1-5) # EG==external gateway
-    local BRIDGE_NAME=$(echo ${CONFIG} | jq '.name')
-    local NODE_CIDR=$(echo ${CONFIG} | jq '.nodeCidr')
+    local RAND=$(uuid|cut -b 1-5)
+    local TMP_IG_NAME="TMP"$RAND
+    local EG_NAME="veth"$RAND # EG==external gateway
+    local BRIDGE_NAME=$(echo ${CONFIG} | jq -r '.name')
+    local NODE_CIDR=$(echo ${CONFIG} | jq -r '.nodeCidr')
+
 
     # Uing a counter folder to give pods unique ips.
     # Yes I am aware of all the problems that this will cause.
-    local COUNTER=1
+    local COUNTER=2
     if [ -f "/tmp/counter" ]; then
        COUNTER=$(cat /tmp/counter)
-       echo $(($COUNTER + 1)) > /tmp/counter
-    else
-        echo $COUNTER > /tmp/counter
     fi
-    local EG_IPA=$(echo $NODE_CIDR | sed -E "s/[0-9]{1,3}\/[0-9]{1,2}/$COUNTER/g") #IPA==IP Address
+    echo $(($COUNTER + 1)) > /tmp/counter
 
+    local EG_IPA=$(echo $NODE_CIDR | sed -E "s/[0-9]{1,3}\/[0-9]{1,2}/$COUNTER/g") #IPA==IP Address
     local DEFAULT_GW=$(echo $NODE_CIDR | sed -E "s/[0-9]{1,3}\/[0-9]{1,2}/1\/24/g") #IPA==IP Address
 
-    logme "Adding container to network"
+    # logme "Creating veth pair"
+    # ip link add $EG_NAME type veth peer name $TMP_IG_NAME
+    # logme "Moving a veth pair to namespace"
+    # ip link set $TMP_IG_NAME netns $CNI_NETNS name $IG_NAME up
+    ln -sfT $CNI_NETNS /var/run/netns/$CNI_CONTAINERID
 
-   
+    logme "Creating veth pair"
+    ip link add $EG_NAME type veth peer name $TMP_IG_NAME
+    logme "Moving a veth pair to namespace"
+    ip link set $TMP_IG_NAME netns $CNI_NETNS
+
+    ip netns exec $CNI_CONTAINERID ip link set $TMP_IG_NAME name $IG_NAME
+    ip netns exec $CNI_CONTAINERID ip link set $IG_NAME up
+
+    logme "Assinging IPs and setting up the routing table"
+    ip addr add $EG_IPA dev $EG_NAME
+    ip netns exec $CNI_CONTAINERID ip addr add $EG_IPA/24 dev $IG_NAME # Can this by $DEFAULT_GW?
+    ip netns exec $CNI_CONTAINERID ip route add default via $DEFAULT_GW
+    ip link set $EG_NAME master $BRIDGE_NAME
+
+    MAC_REGEX=([a-z0-9]{2}:?){6}
+    $MAC_ADDRESS=$(ip netns exec $CNI_CONTAINERID $(
+                       ip l show eth0 | grep -Eho "ether $MAC_REGEX" | grep -Eho $MAC_REGEX))
 
     logme "Reporting status to kubernetes"
-    local output='{
-        "cniVersion": "0.4.0",
-        "ips": [
-            {
-                "version": "4",
-                "address": '$EG_IPA',
-                "gateway": '$DEFAULT_GW',
-                "interface": 0
-            }
-        ],
-        "interfaces": [
-            {
-                "name": "'$IG_NAME'",
-                "mac": "dc:a6:32:6d:45:b8",
-                "sandbox": "'$CNI_NETNS'"
-            }
-        ]
-    }'
-
-    logme "ADDING S3"
+    local output='
+{
+    "cniVersion": "0.4.0",
+    "ips": [
+        {
+            "version": "4",
+            "address": "'$EG_IPA'",
+            "gateway": "'$DEFAULT_GW'",
+            "interface": 0
+        }
+    ],
+    "interfaces": [
+        {
+            "name": "'$IG_NAME'",
+            "mac": "'$MAC_ADDRESS'",
+            "sandbox": "'$CNI_NETNS'"
+        }
+    ]
+}'
+   
     logme $output
     echo $output
 }
+
 cni_delete() {
     local CONFIG=${1}
     local CNI_CONTAINERID=${2}
-    local CNI_NETNS=${3}
-    local CNI_IFNAME=${4}
+    # local CNI_NETNS=${3}
+    # local CNI_IFNAME=${4}
     logme "deleting"
+    rm -rf /var/run/netns/$CNI_CONTAINERID
 }
+
 cni_version() {
     echo '{
         "cniVersion": "0.4.0",
         "supportedVersions": ["0.4.0"]
     }'
 }
+
 
 logme "---------------------------"
 logme "-env vars"
@@ -91,15 +114,17 @@ logme $CONFIG
 
 case $CNI_COMMAND in
     ADD)
+        logme "Adding CNI"
         cni_add $CONFIG $CNI_CONTAINERID $CNI_NETNS $CNI_IFNAME
         ;;
     DEL)
-        cni_delete $CONFIG $CNI_CONTAINERID $CNI_NETNS $CNI_IFNAME
+        cni_delete $CONFIG $CNI_CONTAINERID #$CNI_NETNS $CNI_IFNAME
         ;;
     VERSION)
         cni_version
         ;;
     *)
+        logme "CNI Plugin is in an unexpected state"
         echo "Unknown command $CNI_COMMAND"
         exit 1
         ;;
